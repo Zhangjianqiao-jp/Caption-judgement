@@ -1,0 +1,26 @@
+schema_version: 1
+protocol: humor-caption-v1.0
+primary_endpoint: overall_group_win_rate_ties_half
+secondary_endpoints:
+  - best_pick_win_rate_ties_half
+  - absolute_good_rate
+  - image_grounding
+  - hallucination_severity
+  - humor
+  - originality
+candidate_group_size: 3
+minimum_generation_seeds: 3
+mirror_sides: true
+statistical_unit: image_id_x_target_culture
+bootstrap:
+  replicates: 10000
+  confidence: 0.95
+  seed: 20250308
+hypothesis_test: paired_image_sign_flip
+multiple_comparisons: holm
+claim_gate:
+  primary_ci_lower_above: 0.5
+  require_absolute_quality_non_regression: true
+  require_grounding_non_regression: true
+  require_position_audit: true
+  require_at_least_three_raters_for_final_claim: true

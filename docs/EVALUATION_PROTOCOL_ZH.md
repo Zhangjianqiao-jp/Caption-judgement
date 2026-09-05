@@ -1,4 +1,4 @@
-# 幽默图片 Caption 独立评测准则 v1.0
+# 幽默图片 Caption 独立评测准则 v1.1
 
 ## 1. 适用范围
 
@@ -66,6 +66,16 @@
 - 不以较长、标点多、emoji、`POV/Bro/Meanwhile` 模板作为幽默替代。
 - 两个镜像不能连续展示给同一人；评审顺序应再次随机并适当间隔。
 - LLM temperature=0，记录精确模型版本；更换模型版本视作新实验条件。
+
+### 7.1 操作约束（写入实际 prompt）
+
+- 必须将 `image_path` 对应的真实图片作为图像输入；只提供路径文本不算看图。
+- 每个 packet 必须独立评审，不得使用其他 packet、其他评审或隐藏映射的信息。
+- API/inference temperature 必须为 0；无法强制为 0 时停止该评审。
+- `private_mapping.jsonl`、`blind.secret`、系统身份、checkpoint 和训练方法只保留在
+  trusted aggregation machine，不能发送给模型。
+- 模型只返回当前 `blind_id` 的 decision JSON；由可信编排器分别写入
+  `judge-1.json`、`judge-2.json` 或 `judge-3.json`。
 
 ## 8. 统计
 

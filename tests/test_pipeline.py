@@ -12,6 +12,8 @@ from caption_judgement.packet import build_blind_packets
 from caption_judgement.prompts import prompt_sha256
 from caption_judgement.cli import main
 from caption_judgement.io import read_jsonl, write_json, write_jsonl
+from caption_judgement.homer import unbiased_pass_at_k, summarize_homer_pass_at_k
+from caption_judgement.provenance import provenance_sha256, validate_provenance
 
 
 def generations():
@@ -117,3 +119,62 @@ def test_v35_cli_closed_loop(tmp_path):
     main(["aggregate", "--mapping", str(private), "--ratings", str(rating), "--bootstrap", "100", "--output", str(aggregate)])
     main(["report", "--aggregate", str(aggregate), "--audit", str(audit), "--diversity", str(diversity), "--output", str(report)])
     assert "Humorous Caption Evaluation Report" in report.read_text()
+
+
+def valid_provenance(source_sha):
+    h = "a" * 64
+    return {
+        "schema_version": 1,
+        "evaluation_id": "test-homer-001",
+        "track": "homer_comparable",
+        "protocol": "homer_unbiased_pass_at_k",
+        "dataset": "hia_v2",
+        "code_commit": "0123456789abcdef0123456789abcdef01234567",
+        "source_generations_sha256": source_sha,
+        "dataset_manifest_sha256": "d" * 64,
+        "models": [
+            {"role": "planner", "model_id": "qwen-planner", "revision_or_snapshot": "rev1",
+             "adapter": None, "prompt_sha256": h},
+            {"role": "generator", "model_id": "qwen-generator", "revision_or_snapshot": "rev1",
+             "adapter": None, "prompt_sha256": h},
+        ],
+        "generation": {"temperature": 1.0, "candidates_per_image": 5,
+                        "seeds": [1, 2, 3], "repeated_trials": 5},
+        "evaluator": {"model_id": "gpt-5-chat-latest", "canonical_model_id": "gpt-5-chat-latest",
+                      "version_or_date": "2026-09-06", "temperature": 0,
+                      "prompt_sha256": h, "substitution": False},
+        "protocol_details": {"pass_at_k": [1, 3, 5]},
+    }
+
+
+def test_provenance_is_strict_and_packet_manifest_keeps_it_private(tmp_path):
+    source_sha = "b" * 64
+    provenance = valid_provenance(source_sha)
+    assert validate_provenance(provenance) == []
+    assert len(provenance_sha256(provenance)) == 64
+    invalid = dict(provenance)
+    invalid["evaluator"] = dict(provenance["evaluator"], model_id="other", substitution=False)
+    assert validate_provenance(invalid)
+    packets, mapping = build_blind_packets(generations(), [("sft", "dpo")], secret=b"0123456789abcdef")
+    from caption_judgement.packet import packet_manifest
+    manifest = packet_manifest(packets, mapping, source_sha256=source_sha, provenance=provenance)
+    assert manifest["provenance_sha256"] == provenance_sha256(provenance)
+    assert all("model_id" not in packet for packet in packets)
+
+
+def test_homer_unbiased_pass_at_k_and_image_bootstrap():
+    assert unbiased_pass_at_k(5, 0, 1) == 0.0
+    assert unbiased_pass_at_k(5, 1, 1) == pytest.approx(0.2)
+    assert unbiased_pass_at_k(5, 2, 3) == pytest.approx(0.9)
+    rows = []
+    for system in ("text", "latent"):
+        for image in ("i1", "i2"):
+            for trial in range(5):
+                rows.append({"system_id": system, "image_id": image, "trial": trial,
+                             "reference_group": "#top10", "candidate_count": 5,
+                             "winning_caption_count": 2 if system == "latent" else 0})
+    result = summarize_homer_pass_at_k(rows, bootstrap_replicates=100,
+                                       provenance=valid_provenance("c" * 64))
+    latent = [r for r in result["summaries"] if r["system_id"] == "latent" and r["k"] == 1][0]
+    assert latent["pass_at_k"] == pytest.approx(0.4)
+    assert latent["images"] == 2 and latent["repeated_trials"] == 5

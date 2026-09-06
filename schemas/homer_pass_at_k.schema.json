@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HOMER unbiased Pass@K record",
+  "type": "object",
+  "required": ["system_id", "image_id", "trial", "candidate_count", "winning_caption_count"],
+  "properties": {
+    "system_id": {"type": "string", "minLength": 1},
+    "image_id": {"type": "string", "minLength": 1},
+    "trial": {"type": "integer", "minimum": 0},
+    "reference_group": {"type": "string", "minLength": 1},
+    "candidate_count": {"type": "integer", "minimum": 1},
+    "winning_caption_count": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": true
+}

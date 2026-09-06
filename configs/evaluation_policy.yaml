@@ -1,5 +1,5 @@
-schema_version: 1
-protocol: humor-caption-v1.0
+schema_version: 2
+protocol: humor-caption-v1.1
 primary_endpoint: overall_group_win_rate_ties_half
 secondary_endpoints:
   - best_pick_win_rate_ties_half
@@ -24,3 +24,27 @@ claim_gate:
   require_grounding_non_regression: true
   require_position_audit: true
   require_at_least_three_raters_for_final_claim: true
+
+# This is the paper-comparable primary track.  It is intentionally separate
+# from the Group-of-N blind extension above; the two denominators must never be
+# pooled.
+homer_comparable:
+  canonical_evaluator_model: gpt-5-chat-latest
+  evaluator_temperature: 0
+  generation_temperature: 1.0
+  candidates_per_image: 5
+  pass_at_k: [1, 3, 5]
+  repeated_trials: 5
+  allow_evaluator_substitution: true
+  substitution_label_required: true
+  substitution_label: HOMER-protocol adapted evaluation
+  statistical_unit: image_id
+  bootstrap: image_clustered
+
+project_extension:
+  group_size: 10
+  minimum_generation_seeds: 3
+  mirror_sides: true
+  independent_judges: 3
+  absolute_labels: [good, weak, bad]
+  statistical_unit: image_id_x_target_culture

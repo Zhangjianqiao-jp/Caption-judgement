@@ -107,3 +107,40 @@
 ## 10. 论文依据
 
 本准则以 NeurIPS 2024 Humor in AI 的 group preference、ACL 2023 Electronic Sheep 的同图困难比较、NeurIPS 2023 MT-Bench 的 judge position-bias 分析、EMNLP 2023 G-Eval 的结构化标准为核心；diversity 参考 EACL 2021 diversity evaluation 与 TMLR 2023 Vendi Score。链接见根目录 README。
+
+## 11. HOMER-comparable 主轨道（与项目扩展分开）
+
+本框架的 Group-of-3/10 是项目扩展；HOMER 的主端点另行使用：每图 5 个候选、5 次
+重复试验、生成 temperature=1.0、评审 temperature=0、Pass@1/3/5。评审器按预注册的
+参考组判定每个候选是否成功，输入 JSONL 每行必须包含：
+
+```text
+system_id, image_id, trial, reference_group,
+candidate_count=5, winning_caption_count∈{0,...,5}
+```
+
+`caption-judge homer-pass-at-k` 使用 HOMER 的无偏估计：
+
+\[
+\operatorname{Pass@k}=1-\frac{\binom{n-c}{k}}{\binom{n}{k}},
+\]
+
+先在同一图片内平均五次 trial，再对图片做 bootstrap；不能把 caption、seed 或 trial
+当作独立样本。HOMER 论文的 primary evaluator 标签为 GPT-5；本项目将具体 API model
+ID 固定为 `gpt-5-chat-latest`。若因服务可用性使用其他模型，必须在 provenance 中同时
+写出 canonical/actual model ID、snapshot/date、`substitution=true` 及
+`HOMER-protocol adapted evaluation`，结果不能合并到 canonical 数字。
+
+## 12. Provenance 与数据版本
+
+每个正式运行都应提供 `provenance.json`，其中固定：
+
+- Planner、Generator、bridge 的实际 model ID、revision/snapshot、adapter 与 prompt SHA-256；
+- generation/evaluator temperature、candidate 数、seed、重复次数；
+- 输入 generations 文件 SHA-256、dataset/split、代码 commit；
+- canonical evaluator、实际 evaluator、替代评审标记和评审 prompt SHA-256。
+
+`build-packets --provenance` 会把 provenance 及其 SHA-256 仅写入私有 manifest；公开
+blind packet 不携带 model identity。`aggregate --provenance` 会检查每份 rating 的
+model、temperature 和 prompt hash 与声明一致，并把 provenance hash 写入最终结果。缺少
+这些字段的输出只能作为 smoke，不能进入论文主表。

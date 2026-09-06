@@ -1,11 +1,11 @@
 # Caption-judgement
 
-一个面向 **image → humorous caption** 的、确定性、匿名、可复现评测框架。它把 Humor-generator 的生成结果转成密钥盲化的 Group-of-N packet，收集独立评审，执行镜像消偏、图片聚类统计、绝对质量与多维质量分析，并输出可审计报告。
+一个面向 **image → humorous caption** 的、确定性、匿名、可复现评测框架。它把 Humor-generator 的生成结果转成密钥盲化的 Group-of-N packet，收集独立评审，执行镜像消偏、图片聚类统计、绝对质量与多维质量分析，并输出可审计报告。它同时提供与 HOMER 主评测兼容的五候选、Pass@1/3/5、五次重复试验聚合器。
 
 本项目解决的不是“让一个 judge 随便打分”，而是建立如下闭环：
 
 ```text
-固定 checkpoint / prompt / generation config / seeds
+固定 checkpoint / model revision / prompt hash / generation config / seeds
                  ↓
 校验并冻结 generations.jsonl + SHA-256
                  ↓
@@ -19,7 +19,7 @@ image-clustered CI + 配对置换检验 + Holm 校正
                  ↓
 win rate + good/weak/bad + grounding/originality/diversity
                  ↓
-预注册 claim gate → 报告、图、manifest
+预注册 claim gate → 报告、图、manifest（含不可变 provenance）
 ```
 
 ## 为什么这样设计
@@ -107,6 +107,15 @@ caption-judge build-packets \
   --manifest run/packet_manifest.json
 ```
 
+正式运行必须额外提供 provenance JSON。它记录实际 model ID、revision/snapshot、
+planner/generator/bridge 的 prompt hash、数据源 hash、生成温度和 seed，以及 canonical
+评审器与实际评审器。如果实际评审器不是 `gpt-5-chat-latest`，必须预先标记为
+`HOMER-protocol adapted evaluation`；模型身份只写入私有 manifest，绝不进入公开 packet：
+
+```bash
+caption-judge build-packets ... --provenance run/provenance.json
+```
+
 注意：v3.5 的 `system_id` 本身含 `::`，所以 comparison 使用无歧义的 `REFERENCE=>CHALLENGER`。不含冒号的简单系统名也兼容旧式 `REF:CHAL`。
 
 生成评审提示与空白答卷：
@@ -137,6 +146,7 @@ caption-judge aggregate \
   --mapping run/private_mapping.jsonl \
   --ratings run/judge-1.json run/judge-2.json run/judge-3.json \
   --seed 20250308 --bootstrap 10000 \
+  --provenance run/provenance.json \
   --output run/aggregate.json
 
 caption-judge diversity --generations run/generations.jsonl --output run/diversity.json
@@ -152,6 +162,32 @@ caption-judge report \
 ```
 
 也可执行 `scripts/run_closed_loop.sh`。无 rating 参数时它停在空白答卷；有 rating 参数时完成聚合和报告。
+
+### 4. HOMER-comparable 主轨道
+
+HOMER 的 primary endpoint 不是 Group-of-3 win rate，而是无偏 Pass@K。先由评审器或
+reference matcher 为每个 `system_id × image_id × trial` 写一行：`candidate_count=5`、
+`winning_caption_count`（五个候选中达到指定参考组标准的个数），并使用五个 trial：
+
+```json
+{"system_id":"qwen7b","image_id":"hia:530","trial":0,
+ "reference_group":"#top10","candidate_count":5,"winning_caption_count":2}
+```
+
+然后运行：
+
+```bash
+caption-judge homer-pass-at-k \
+  --records run/homer_records.jsonl \
+  --k 1 3 5 --provenance run/provenance.json \
+  --seed 20250308 --bootstrap 10000 \
+  --output run/homer_pass_at_k.json
+```
+
+聚合器严格计算 `1 - C(n-c,k) / C(n,k)`，按图片先平均 trial，再做图片级 bootstrap
+区间；不会把 seed、trial 或候选行当作独立图片。HOMER track 的 provenance 会强制
+`generation temperature=1.0`、5 candidates、5 repeated trials、evaluator temperature=0。
+如果使用替代评审器，输出只能称 adapted evaluation，不能和 canonical GPT-5 合并。
 
 ## 评分准则
 
@@ -221,7 +257,7 @@ REPORT.md
 plots/
 ```
 
-同时在上游保存 git commit、checkpoint manifest、generation config、prompt、seed、dataset split/hash。`packet_manifest.json` 固定源文件、公开 packet、private mapping 和 rubric 的 SHA-256。
+同时在上游保存 git commit、checkpoint manifest、generation config、prompt、seed、dataset split/hash。`packet_manifest.json` 固定源文件、公开 packet、private mapping 和 rubric 的 SHA-256。启用 provenance 时，manifest 和 post-aggregation result 还包含 `provenance_sha256`；模型身份只在私有审计产物中出现。
 
 ## 测试
 
@@ -246,6 +282,7 @@ plots/
 - Liu et al., **G-Eval: NLG Evaluation using GPT-4 with Better Human Alignment**, EMNLP 2023. [ACL Anthology](https://aclanthology.org/2023.emnlp-main.153/)
 - Tevet and Berant, **Evaluating the Evaluation of Diversity in Natural Language Generation**, EACL 2021. [ACL Anthology](https://aclanthology.org/2021.eacl-main.25/)
 - Friedman and Dieng, **The Vendi Score: A Diversity Evaluation Metric for Machine Learning**, TMLR 2023. [OpenReview](https://openreview.net/forum?id=g97OHbQyk1)
+- Shang et al., **On the Wings of Imagination: Conflicting Script-based Multi-role Framework for Humor Caption Generation**, ICLR 2026. [Paper](https://arxiv.org/html/2602.06423)
 
 ## License
 

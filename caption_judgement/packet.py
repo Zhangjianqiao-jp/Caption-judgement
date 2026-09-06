@@ -6,6 +6,7 @@ from typing import Any, Iterable
 
 from .contracts import index_generations, validate_generations
 from .io import canonical_json, sha256_bytes
+from .provenance import provenance_sha256
 
 
 def _digest(secret: bytes, *values: Any) -> str:
@@ -125,9 +126,10 @@ def build_blind_packets(
 
 
 def packet_manifest(
-    packets: list[dict[str, Any]], mapping: list[dict[str, Any]], *, source_sha256: str
+    packets: list[dict[str, Any]], mapping: list[dict[str, Any]], *, source_sha256: str,
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    manifest = {
         "schema_version": 1,
         "packets": len(packets),
         "unique_images": len({row["image_id"] for row in mapping}),
@@ -144,3 +146,9 @@ def packet_manifest(
             "".join(canonical_json(row) + "\n" for row in mapping).encode("utf-8")
         ),
     }
+    if provenance is not None:
+        manifest["provenance_sha256"] = provenance_sha256(provenance)
+        # Provenance is private post-hoc audit metadata.  It is deliberately
+        # absent from each public packet so a judge cannot infer model identity.
+        manifest["provenance"] = provenance
+    return manifest

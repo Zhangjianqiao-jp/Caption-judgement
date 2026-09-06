@@ -12,6 +12,8 @@ from .diversity import summarize_diversity
 from .io import read_json, read_jsonl, sha256_file, write_json, write_jsonl
 from .packet import build_blind_packets, packet_manifest, parse_comparison
 from .prompts import RUBRIC_VERSION, prompt_sha256, render_judge_prompt
+from .provenance import provenance_sha256, validate_provenance, validate_rating_provenance
+from .homer import summarize_homer_pass_at_k
 from .report import render_markdown, save_plots
 
 
@@ -38,7 +40,14 @@ def _cmd_build(args):
         rubric_version=RUBRIC_VERSION,
     )
     write_jsonl(args.public, packets); write_jsonl(args.private, mapping)
-    manifest = packet_manifest(packets, mapping, source_sha256=sha256_file(args.generations))
+    provenance = read_json(args.provenance) if args.provenance else None
+    if provenance is not None:
+        errors = validate_provenance(provenance)
+        if errors:
+            raise ValueError("invalid provenance:\n" + "\n".join(errors))
+        if provenance.get("source_generations_sha256") != sha256_file(args.generations):
+            raise ValueError("provenance.source_generations_sha256 does not match --generations")
+    manifest = packet_manifest(packets, mapping, source_sha256=sha256_file(args.generations), provenance=provenance)
     manifest["rubric_sha256"] = prompt_sha256(); write_json(args.manifest, manifest)
 
 
@@ -69,8 +78,27 @@ def _cmd_audit(args):
 
 
 def _cmd_aggregate(args):
+    provenance = read_json(args.provenance) if args.provenance else None
+    if provenance is not None:
+        errors = validate_provenance(provenance)
+        if errors:
+            raise ValueError("invalid provenance:\n" + "\n".join(errors))
     result = aggregate_ratings(read_jsonl(args.mapping), [read_json(path) for path in args.ratings],
-                               bootstrap_seed=args.seed, bootstrap_replicates=args.bootstrap)
+                               bootstrap_seed=args.seed, bootstrap_replicates=args.bootstrap,
+                               provenance=provenance)
+    write_json(args.output, result)
+
+
+def _cmd_homer_pass_at_k(args):
+    provenance = read_json(args.provenance) if args.provenance else None
+    if provenance is not None:
+        errors = validate_provenance(provenance)
+        if errors:
+            raise ValueError("invalid provenance:\n" + "\n".join(errors))
+    result = summarize_homer_pass_at_k(
+        read_jsonl(args.records), ks=tuple(args.k), bootstrap_seed=args.seed,
+        bootstrap_replicates=args.bootstrap, provenance=provenance,
+    )
     write_json(args.output, result)
 
 
@@ -98,11 +126,12 @@ def build_parser():
     sub = parser.add_subparsers(required=True)
     p = sub.add_parser("adapt"); p.add_argument("--input", required=True); p.add_argument("--output", required=True); p.add_argument("--skip-image-check", action="store_true"); p.set_defaults(func=_cmd_adapt)
     p = sub.add_parser("validate"); p.add_argument("--input", required=True); p.add_argument("--check-images", action="store_true"); p.set_defaults(func=_cmd_validate)
-    p = sub.add_parser("build-packets"); p.add_argument("--generations", required=True); p.add_argument("--comparison", action="append", required=True); p.add_argument("--secret-file", required=True); p.add_argument("--group-size", type=int, default=3); p.add_argument("--family", default="primary"); p.add_argument("--no-mirror", action="store_true"); p.add_argument("--public", required=True); p.add_argument("--private", required=True); p.add_argument("--manifest", required=True); p.set_defaults(func=_cmd_build)
+    p = sub.add_parser("build-packets"); p.add_argument("--generations", required=True); p.add_argument("--comparison", action="append", required=True); p.add_argument("--secret-file", required=True); p.add_argument("--group-size", type=int, default=3); p.add_argument("--family", default="primary"); p.add_argument("--no-mirror", action="store_true"); p.add_argument("--provenance"); p.add_argument("--public", required=True); p.add_argument("--private", required=True); p.add_argument("--manifest", required=True); p.set_defaults(func=_cmd_build)
     p = sub.add_parser("render-prompts"); p.add_argument("--packets", required=True); p.add_argument("--output", required=True); p.set_defaults(func=_cmd_prompts)
     p = sub.add_parser("rating-template"); p.add_argument("--packets", required=True); p.add_argument("--rater-id", required=True); p.add_argument("--output", required=True); p.set_defaults(func=_cmd_template)
     p = sub.add_parser("audit"); p.add_argument("--generations", required=True); p.add_argument("--packets"); p.add_argument("--mapping"); p.add_argument("--output", required=True); p.set_defaults(func=_cmd_audit)
-    p = sub.add_parser("aggregate"); p.add_argument("--mapping", required=True); p.add_argument("--ratings", nargs="+", required=True); p.add_argument("--seed", type=int, default=20250308); p.add_argument("--bootstrap", type=int, default=10000); p.add_argument("--output", required=True); p.set_defaults(func=_cmd_aggregate)
+    p = sub.add_parser("aggregate"); p.add_argument("--mapping", required=True); p.add_argument("--ratings", nargs="+", required=True); p.add_argument("--provenance"); p.add_argument("--seed", type=int, default=20250308); p.add_argument("--bootstrap", type=int, default=10000); p.add_argument("--output", required=True); p.set_defaults(func=_cmd_aggregate)
+    p = sub.add_parser("homer-pass-at-k"); p.add_argument("--records", required=True); p.add_argument("--k", type=int, nargs="+", default=[1, 3, 5]); p.add_argument("--provenance"); p.add_argument("--seed", type=int, default=20250308); p.add_argument("--bootstrap", type=int, default=10000); p.add_argument("--output", required=True); p.set_defaults(func=_cmd_homer_pass_at_k)
     p = sub.add_parser("diversity"); p.add_argument("--generations", required=True); p.add_argument("--min-candidates", type=int, default=2); p.add_argument("--sbert-model"); p.add_argument("--output", required=True); p.set_defaults(func=_cmd_diversity)
     p = sub.add_parser("report"); p.add_argument("--aggregate", required=True); p.add_argument("--audit"); p.add_argument("--diversity"); p.add_argument("--plots-dir"); p.add_argument("--output", required=True); p.set_defaults(func=_cmd_report)
     return parser

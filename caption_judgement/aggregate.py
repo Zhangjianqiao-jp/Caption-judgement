@@ -9,6 +9,7 @@ from .statistics import (
     mean, paired_sign_flip_test,
 )
 from .prompts import prompt_sha256
+from .provenance import provenance_sha256, validate_rating_provenance
 
 
 def _unit(row: dict[str, Any]) -> str:
@@ -29,6 +30,7 @@ def _system_label(value: float) -> str:
 def aggregate_ratings(
     mapping_rows: Iterable[dict[str, Any]], rating_payloads: Iterable[dict[str, Any]], *,
     bootstrap_seed: int = 20250308, bootstrap_replicates: int = 10_000,
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     mapping_rows = list(mapping_rows)
     mapping = {row["blind_id"]: row for row in mapping_rows}
@@ -46,6 +48,10 @@ def aggregate_ratings(
             raise ValueError("invalid rating payload:\n" + "\n".join(errors[:50]))
         if payload["judge_metadata"]["prompt_sha256"] != prompt_sha256():
             raise ValueError("rating payload was produced with a different rubric prompt SHA-256")
+        if provenance is not None:
+            provenance_errors = validate_rating_provenance(provenance, payload["judge_metadata"])
+            if provenance_errors:
+                raise ValueError("rating/provenance mismatch:\n" + "\n".join(provenance_errors))
 
     # Raw records keep orientations for position-bias diagnostics.
     relative: dict[tuple, list[tuple[int, float, str]]] = defaultdict(list)
@@ -187,7 +193,7 @@ def aggregate_ratings(
                               "generation_seed_sample_variance": variance})
 
     total_relative = sum(a_choices[(metric, choice)] for metric in ("overall", "best_pick") for choice in ("A", "B", "Tie"))
-    return {
+    result = {
         "schema_version": 1,
         "statistical_unit": "image_id x target_culture",
         "tie_policy": "Tie contributes 0.5 to challenger win rate",
@@ -208,3 +214,7 @@ def aggregate_ratings(
         "seed_variance": seed_variance,
         "collapsed_relative": collapsed_relative,
     }
+    if provenance is not None:
+        result["provenance"] = provenance
+        result["provenance_sha256"] = provenance_sha256(provenance)
+    return result

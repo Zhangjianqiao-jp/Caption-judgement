@@ -21,6 +21,17 @@ def render_markdown(aggregate: dict[str, Any], audit: dict[str, Any] | None = No
             f"{row['challenger_win_rate_ties_half']:.3f} | [{row['ci95_low']:.3f}, {row['ci95_high']:.3f}] | "
             f"{row['p_value_holm']:.4g} | {row['images']} | {alpha_text} |"
         )
+    provenance = aggregate.get("provenance")
+    if provenance:
+        evaluator = provenance.get("evaluator", {})
+        lines[5:5] = [
+            f"- Track: `{provenance.get('track', 'unknown')}`",
+            f"- Evaluation ID: `{provenance.get('evaluation_id', 'unknown')}`",
+            f"- Canonical evaluator: `{evaluator.get('canonical_model_id', 'unknown')}`",
+            f"- Actual evaluator: `{evaluator.get('model_id', 'unknown')}`",
+            f"- Evaluator substitution: `{evaluator.get('substitution', 'unknown')}`",
+            f"- Provenance SHA-256: `{aggregate.get('provenance_sha256', 'unknown')}`",
+        ]
     lines += ["", "## Absolute quality", "",
               "| Family | System | Scope | Score | 95% CI | Images | Labels |",
               "|---|---|---|---:|---:|---:|---|"]
